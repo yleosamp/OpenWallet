@@ -1,0 +1,46 @@
+QMainWindow {
+    background-color: #f0f0f0;
+}
+
+QPushButton {
+    background-color: #2980b9;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    min-width: 200px;
+    margin: 5px;
+}
+
+QPushButton:hover {
+    background-color: #3498db;
+}
+
+QPushButton:disabled {
+    background-color: #bdc3c7;
+}
+
+QLineEdit, QTextEdit {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    background-color: white;
+}
+
+QGroupBox {
+    font-weight: bold;
+    border: 1px solid #bdc3c7;
+    border-radius: 5px;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+QLabel {
+    font-size: 13px;
+}
+
+QRadioButton {
+    font-size: 13px;
+    padding: 5px;
+} 
