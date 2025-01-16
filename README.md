@@ -1,4 +1,4 @@
-# Crypto Wallet Segura - Projeto de Estudos
+# OpenWallet
 
 ⚠️ **AVISO IMPORTANTE** ⚠️
 
