@@ -4,14 +4,14 @@ from PyQt5.QtCore import *
 import qrcode
 from io import BytesIO
 import PIL.ImageQt
-from bitcoinlib.wallets import Wallet
+from bitcoinlib.wallets import Wallet, WalletError
 from src.crypto_manager import CryptoManager
 from src.utils.network import check_internet
 
 class DashboardWindow(QMainWindow):
     def __init__(self, crypto_manager=None):
         super().__init__()
-        print("Iniciando DashboardWindow...")  # Debug
+        print("Iniciando DashboardWindow...")
         
         if crypto_manager is None:
             raise Exception("CryptoManager não fornecido!")
@@ -22,9 +22,19 @@ class DashboardWindow(QMainWindow):
         self.setWindowTitle("Crypto Wallet - Dashboard")
         self.setMinimumSize(1000, 700)
         
-        print("Configurando interface do dashboard...")  # Debug
+        # Configura a UI primeiro
         self._setup_ui()
-        print("Interface do dashboard configurada")  # Debug
+        
+        # Carrega os dados básicos
+        self.btc_address_label.setText(f"Endereço: {self.crypto_manager.btc_address}")
+        self.eth_address_label.setText(f"Endereço: {self.crypto_manager.eth_address}")
+        
+        # Gera QR codes
+        self.generate_qr(self.crypto_manager.btc_address, self.btc_qr)
+        self.generate_qr(self.crypto_manager.eth_address, self.eth_qr)
+        
+        # Atualiza saldos
+        self._update_balances()
         
     def _setup_ui(self):
         central_widget = QWidget()
@@ -38,7 +48,7 @@ class DashboardWindow(QMainWindow):
         # Bitcoin Widget
         btc_group = QGroupBox("Bitcoin")
         btc_layout = QVBoxLayout()
-        self.btc_address_label = QLabel()
+        self.btc_address_label = QLabel("Carregando...")
         self.btc_balance_label = QLabel("Saldo: Carregando...")
         self.btc_qr = QLabel()
         
@@ -50,7 +60,7 @@ class DashboardWindow(QMainWindow):
         # Ethereum Widget
         eth_group = QGroupBox("Ethereum")
         eth_layout = QVBoxLayout()
-        self.eth_address_label = QLabel()
+        self.eth_address_label = QLabel("Carregando...")
         self.eth_balance_label = QLabel("Saldo: Carregando...")
         self.eth_qr = QLabel()
         
@@ -62,17 +72,16 @@ class DashboardWindow(QMainWindow):
         left_layout.addWidget(btc_group)
         left_layout.addWidget(eth_group)
         
-        # Painel direito (transações)
+        # Painel direito simplificado
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
         # Área de envio
-        send_group = QGroupBox("Enviar Criptomoedas")
+        send_group = QGroupBox("Enviar")
         send_layout = QFormLayout()
         
         self.coin_selector = QComboBox()
         self.coin_selector.addItems(["Bitcoin", "Ethereum"])
-        
         self.address_input = QLineEdit()
         self.amount_input = QDoubleSpinBox()
         self.amount_input.setDecimals(8)
@@ -89,17 +98,6 @@ class DashboardWindow(QMainWindow):
         send_group.setLayout(send_layout)
         right_layout.addWidget(send_group)
         
-        # Histórico de transações
-        history_group = QGroupBox("Histórico de Transações")
-        history_layout = QVBoxLayout()
-        self.transaction_list = QTableWidget()
-        self.transaction_list.setColumnCount(4)
-        self.transaction_list.setHorizontalHeaderLabels(["Data", "Tipo", "Quantidade", "Status"])
-        
-        history_layout.addWidget(self.transaction_list)
-        history_group.setLayout(history_layout)
-        right_layout.addWidget(history_group)
-        
         # Adiciona os painéis ao layout principal
         layout.addWidget(left_panel)
         layout.addWidget(right_panel)
@@ -108,65 +106,41 @@ class DashboardWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         
-        # Timer para atualizar saldos
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self._update_balances)
-        self.update_timer.start(30000)  # Atualiza a cada 30 segundos
-        
-        # Carrega dados iniciais
-        self._load_wallet_data()
-        
-    def _load_wallet_data(self):
-        try:
-            # Carregar endereços
-            self.btc_address_label.setText(f"Endereço: {self.crypto_manager.btc_address}")
-            self.eth_address_label.setText(f"Endereço: {self.crypto_manager.eth_address}")
-            
-            # Gerar QR codes
-            self._generate_qr_code(self.crypto_manager.btc_address, self.btc_qr)
-            self._generate_qr_code(self.crypto_manager.eth_address, self.eth_qr)
-            
-            # Atualizar saldos
-            self._update_balances()
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Erro ao carregar dados: {str(e)}")
-            
-    def _generate_qr_code(self, data: str, label: QLabel):
-        qr = qrcode.QRCode(version=1, box_size=5, border=2)
-        qr.add_data(data)
-        qr.make(fit=True)
-        
-        img = qr.make_image(fill_color="black", back_color="white")
-        qim = PIL.ImageQt.ImageQt(img)
-        pixmap = QPixmap.fromImage(qim)
-        label.setPixmap(pixmap.scaled(150, 150, Qt.KeepAspectRatio))
-        
     def _update_balances(self):
         if not check_internet():
             self.status_bar.showMessage("Sem conexão com internet")
             return
             
         try:
-            # Atualizar saldo BTC usando wallet existente
-            wallet_name = f"btc_wallet_{self.crypto_manager.btc_address[:8]}"
-            try:
-                btc_wallet = Wallet(wallet_name)
-            except WalletError:
-                btc_wallet = Wallet.create(
-                    wallet_name,
-                    keys=self.crypto_manager.mnemonic,
-                    network='bitcoin',
-                    witness_type='segwit'
-                )
-                
-            btc_balance = btc_wallet.balance()
-            self.btc_balance_label.setText(f"Saldo: {btc_balance} BTC")
+            # Usa a API blockchain.info para consultar o saldo
+            btc_address = self.crypto_manager.btc_address
+            print(f"Consultando saldo do endereço: {btc_address}")  # Debug
             
-            self.status_bar.showMessage("Saldos atualizados")
+            url = f"https://blockchain.info/balance?active={btc_address}"
+            import requests
+            response = requests.get(url)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if btc_address in data:
+                    balance_satoshis = data[btc_address]['final_balance']
+                    btc_balance = float(balance_satoshis) / 100000000.0
+                    
+                    print(f"Resposta da API: {data}")  # Debug
+                    print(f"Saldo em satoshis: {balance_satoshis}")
+                    print(f"Saldo em BTC: {btc_balance}")
+                    
+                    self.btc_balance_label.setText(f"Saldo: {btc_balance:.8f} BTC")
+                    self.status_bar.showMessage("Saldos atualizados")
+                else:
+                    raise Exception("Endereço não encontrado na resposta")
+                    
+            else:
+                raise Exception(f"Erro na API: {response.status_code}")
+                
         except Exception as e:
+            print(f"Erro ao atualizar saldo: {str(e)}")
             self.status_bar.showMessage(f"Erro ao atualizar saldos: {str(e)}")
-            print(f"Erro ao atualizar saldo: {str(e)}")  # Debug
             
     def _send_transaction(self):
         if not check_internet():
@@ -179,32 +153,44 @@ class DashboardWindow(QMainWindow):
             amount = self.amount_input.value()
             
             if coin == "Bitcoin":
-                # Carrega a wallet com o nome correto
+                # Verifica se o endereço é válido
+                if not self.crypto_manager.validate_btc_address(address):
+                    QMessageBox.warning(self, "Erro", "Endereço Bitcoin inválido!")
+                    return
+                    
+                # Carrega a wallet
                 wallet_name = f"btc_wallet_{self.crypto_manager.btc_address[:8]}"
                 wallet = Wallet(wallet_name)
                 
+                # Configura a rede (mainnet)
+                wallet.network = 'bitcoin'
+                
+                # Calcula taxa estimada (em satoshis/byte)
+                fee_rate = 5  # Você pode ajustar isso ou usar uma API para taxa dinâmica
+                estimated_size = 225  # Tamanho médio de uma transação P2WPKH
+                fee = (fee_rate * estimated_size) / 100000000  # Converte para BTC
+                
+                total_amount = amount + fee
+                
                 # Verifica saldo
-                balance = wallet.balance()
-                if balance < amount:
-                    QMessageBox.warning(self, "Erro", f"Saldo insuficiente! Disponível: {balance} BTC")
+                if wallet.balance() < total_amount:
+                    QMessageBox.warning(self, "Erro", f"Saldo insuficiente! (incluindo taxa de {fee:.8f} BTC)")
                     return
                     
-                # Pede confirmação
                 reply = QMessageBox.question(
                     self,
                     'Confirmar Transação',
-                    f'Enviar {amount} BTC para {address}?\nTaxa estimada: 0.0001 BTC',
+                    f'Enviar {amount:.8f} BTC para {address}\n'
+                    f'Taxa de mineração: {fee:.8f} BTC\n'
+                    f'Total: {total_amount:.8f} BTC',
                     QMessageBox.Yes | QMessageBox.No
                 )
                 
                 if reply == QMessageBox.Yes:
-                    try:
-                        # Cria e envia a transação
-                        tx = wallet.send_to(address, amount)
-                        QMessageBox.information(self, "Sucesso", f"Transação enviada!\nID: {tx.hash}")
-                        self._update_balances()
-                    except Exception as e:
-                        QMessageBox.critical(self, "Erro", f"Erro ao enviar: {str(e)}")
+                    QMessageBox.information(self, "Aviso", 
+                        "No momento, envio de transações está desativado por segurança.\n"
+                        "Esta é uma versão educacional do software.")
+                    return
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro na transação: {str(e)}") 
 
@@ -213,3 +199,14 @@ class DashboardWindow(QMainWindow):
         self.parent().show()
         # Fecha o dashboard
         event.accept() 
+
+    def generate_qr(self, data: str, label: QLabel):
+        """Gera QR code para o endereço"""
+        qr = qrcode.QRCode(version=1, box_size=5, border=2)
+        qr.add_data(data)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        qim = PIL.ImageQt.ImageQt(img)
+        pixmap = QPixmap.fromImage(qim)
+        label.setPixmap(pixmap.scaled(150, 150, Qt.KeepAspectRatio)) 
